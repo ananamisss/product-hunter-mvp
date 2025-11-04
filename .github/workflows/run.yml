@@ -1,0 +1,50 @@
+name: Product Hunter Daily
+on:
+  schedule:
+    - cron: '0 9 * * *'   # daily 09:00 UTC
+  workflow_dispatch:      # lets you run it manually
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scrapers + publish
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GSERVICE_JSON: ${{ secrets.GSERVICE_JSON }}
+        run: |
+          python - <<'PY'
+import os
+from scrape_aliexpress import scrape_search
+from scorer import compute_score
+from push_to_sheets import publish
+
+# 1) scrape AliExpress (you can tweak the query)
+items = scrape_search("mini gadget", pages=1)
+
+# 2) enrich + score (MVP defaults)
+for it in items:
+    it["views"] = 0
+    it["favorites"] = 0
+    it["orders"] = 0
+    it["novelty"] = 1
+    it["score"] = compute_score(it)
+
+# 3) publish to Google Sheets & Telegram
+publish(items, os.environ["GSERVICE_JSON"])
+print("Published", len(items))
+PY
